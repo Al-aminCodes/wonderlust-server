@@ -65,7 +65,7 @@ app.post("/add-destination", verifyToken, async (req, res) => {
 
   res.send(result);
 });
-app.post("/booking", async (req, res) => {
+app.post("/booking", verifyToken, async (req, res) => {
   try {
     const { _id, email, destinationId, ...bookingData } = req.body;
 
@@ -111,7 +111,7 @@ app.post("/booking", async (req, res) => {
   }
 });
 
-app.get("/booking", async (req, res) => {
+app.get("/booking", verifyToken, async (req, res) => {
   try {
     const data = await bookingCollection.find().toArray();
     return res.status(200).json(data);
@@ -169,9 +169,14 @@ app.get("/destination/:id", verifyToken, async (req, res) => {
   const result = await destinationdb.findOne({ _id: new ObjectId(id) });
   res.send(result);
 });
+app.get("/my-destination/:email", async (req, res) => {
+  const { email } = req.params;
+  const result = await destinationdb.find({ userEmail: email }).toArray();
+  res.send(result);
+});
 
 // UPDATE
-app.patch("/destination/:id", async (req, res) => {
+app.patch("/destination/:id", verifyToken, async (req, res) => {
   const { id } = req.params;
   const data = req.body;
   const result = await destinationdb.updateOne(
@@ -181,7 +186,7 @@ app.patch("/destination/:id", async (req, res) => {
   res.json(result);
 });
 
-app.delete("/destination/:id", async (req, res) => {
+app.delete("/destination/:id", verifyToken, async (req, res) => {
   const { id } = req.params;
   const result = await destinationdb.deleteOne({ _id: new ObjectId(id) });
   res.json(result);
