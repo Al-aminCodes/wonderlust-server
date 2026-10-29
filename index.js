@@ -31,26 +31,32 @@ const db = mongodbClient.db("wanderlust");
 const destinationdb = db.collection("destination");
 const bookingCollection = db.collection("booking");
 
+const JWKS = createRemoteJWKSet(
+  new URL(`${process.env.CLIENT_URL}/api/auth/jwks`),
+);
+
 const verifyToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
-  if (!authHeader) {
-    return res.status(401).send({ mag: "Unauthorized!" });
-  }
-  const token = authHeader.split(" ")[1];
-  if (!token) {
-    return res.status(401).send({ mag: "Unauthorized!" });
+  if (!authHeader?.startsWith("Bearer ")) {
+    return res.status(401).send({
+      message: "Unauthorized!",
+    });
   }
 
-  const JWKS = createRemoteJWKSet(
-    new URL(`${process.env.CLIENT_URL}/api/auth/jwks`),
-  );
   try {
+    const token = authHeader.split(" ")[1];
     const { payload } = await jwtVerify(token, JWKS);
+
+    req.user = {
+      email: payload.email,
+    };
 
     next();
   } catch (error) {
-    return res.status(401).send({ mag: "Server Error!" });
+    return res.status(401).send({
+      message: "Invalid or expired token!",
+    });
   }
 };
 
@@ -59,11 +65,19 @@ app.get("/", (req, res) => {
 });
 
 app.post("/add-destination", verifyToken, async (req, res) => {
-  const data = req.body;
-  // console.log("api called", data);
-  const result = await destinationdb.insertOne(data);
+  try {
+    const data = {
+      ...req.body,
+      userEmail: req.user.email,
+    };
 
-  res.send(result);
+    const result = await destinationdb.insertOne(data);
+
+    res.send(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: "Failed to add destination" });
+  }
 });
 app.post("/booking", verifyToken, async (req, res) => {
   try {
@@ -170,9 +184,37 @@ app.get("/destination/limit", async (req, res) => {
 });
 // singel data
 app.get("/destination/:id", verifyToken, async (req, res) => {
-  const { id } = req.params;
-  const result = await destinationdb.findOne({ _id: new ObjectId(id) });
-  res.send(result);
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({
+        message: "Invalid destination ID",
+      });
+    }
+
+    const result = await destinationdb.findOne({
+      _id: new ObjectId(id),
+    });
+
+    if (!result) {
+      return res.status(404).send({
+        message: "Destination not found",
+      });
+    }
+
+    const { userEmail, ...destination } = result;
+
+    res.send({
+      ...destination,
+      isOwner: userEmail === req.user.email,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({
+      message: "Failed to fetch destination",
+    });
+  }
 });
 app.get("/my-destination/:email", async (req, res) => {
   const { email } = req.params;
@@ -182,19 +224,84 @@ app.get("/my-destination/:email", async (req, res) => {
 
 // UPDATE
 app.patch("/destination/:id", verifyToken, async (req, res) => {
-  const { id } = req.params;
-  const data = req.body;
-  const result = await destinationdb.updateOne(
-    { _id: new ObjectId(id) },
-    { $set: data },
-  );
-  res.json(result);
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid destination ID" });
+    }
+
+    const {
+      name,
+      country,
+      category,
+      price,
+      duration,
+      departureDate,
+      imageUrl,
+      description,
+    } = req.body;
+
+    const data = {
+      ...(name !== undefined && { name }),
+      ...(country !== undefined && { country }),
+      ...(category !== undefined && { category }),
+      ...(price !== undefined && { price }),
+      ...(duration !== undefined && { duration }),
+      ...(departureDate !== undefined && { departureDate }),
+      ...(imageUrl !== undefined && { imageUrl }),
+      ...(description !== undefined && { description }),
+    };
+
+    if (Object.keys(data).length === 0) {
+      return res.status(400).send({ message: "No valid fields to update" });
+    }
+
+    const result = await destinationdb.updateOne(
+      {
+        _id: new ObjectId(id),
+        userEmail: req.user.email,
+      },
+      { $set: data },
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(403).send({
+        message: "You cannot update this destination",
+      });
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: "Failed to update destination" });
+  }
 });
 
 app.delete("/destination/:id", verifyToken, async (req, res) => {
-  const { id } = req.params;
-  const result = await destinationdb.deleteOne({ _id: new ObjectId(id) });
-  res.json(result);
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid destination ID" });
+    }
+
+    const result = await destinationdb.deleteOne({
+      _id: new ObjectId(id),
+      userEmail: req.user.email,
+    });
+
+    if (result.deletedCount === 0) {
+      return res.status(403).send({
+        message: "You cannot delete this destination",
+      });
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: "Failed to delete destination" });
+  }
 });
 // http//localhost:8000
 app.listen(port, () => {
