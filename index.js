@@ -163,6 +163,11 @@ app.get("/destinations", async (req, res) => {
 
   res.send(data);
 });
+// limied destination api
+app.get("/destination/limit", async (req, res) => {
+  const data = await destinationdb.find().limit(6).toArray();
+  res.send(data);
+});
 // singel data
 app.get("/destination/:id", verifyToken, async (req, res) => {
   const { id } = req.params;
