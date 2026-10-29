@@ -190,3 +190,5 @@ app.delete("/destination/:id", async (req, res) => {
 app.listen(port, () => {
   console.log(`server app listening on port ${port}`);
 });
+
+export default app;
